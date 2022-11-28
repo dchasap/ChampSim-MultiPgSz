@@ -1,13 +1,12 @@
-#include "spp_dev.h"
-
 #include "cache.h"
+#include "spp_dev.h"
 
 SIGNATURE_TABLE ST;
 PATTERN_TABLE PT;
 PREFETCH_FILTER FILTER;
 GLOBAL_REGISTER GHR;
 
-void CACHE::prefetcher_initialize() {}
+void CACHE::prefetcher_initialize() { std::cout << NAME << " SPP prefetcher" << std::endl; }
 
 void CACHE::prefetcher_cycle_operate() {}
 
@@ -494,3 +493,4 @@ uint32_t GLOBAL_REGISTER::check_entry(uint32_t page_offset)
 
   return max_conf_way;
 }
+

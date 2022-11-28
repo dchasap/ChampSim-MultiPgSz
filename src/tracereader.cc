@@ -64,7 +64,8 @@ ooo_model_instr tracereader::read_single_instr()
 #ifdef MULTIPLE_PAGE_SIZE
 	T trace_read_instr;
 	page_size_info ext_read_info;
-	while (!fread(&trace_read_instr, sizeof(T), 1, trace_file) && !fread(&ext_read_info, sizeof(page_size_info), 1, trace_ext_file)) {
+	
+	while (!fread(&trace_read_instr, sizeof(T), 1, trace_file) || !fread(&ext_read_info, sizeof(page_size_info), 1, trace_ext_file)) {
 		// reached end of file for this trace extension
 		std::cout << "*** Reached end of trace: " << trace_string << std::endl;
 		std::cout << "*** Reached end of trace ext: " << trace_ext_string << std::endl;
@@ -189,7 +190,9 @@ public:
 tracereader* get_tracereader(std::string fname, std::string fxname, uint8_t cpu, bool is_cloudsuite)
 {
   if (is_cloudsuite) {
-    return new cloudsuite_tracereader(cpu, fname, fxname);
+		std::cout << "Error: Cloudsuite not supported with multiple page sizes!" << std::endl;
+		assert(false);
+    //return new cloudsuite_tracereader(cpu, fname, fxname);
   } else {
     return new input_tracereader(cpu, fname, fxname);
   }

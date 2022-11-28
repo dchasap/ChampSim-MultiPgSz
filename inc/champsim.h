@@ -5,16 +5,22 @@
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <iomanip>
 
 #include "champsim_constants.h"
 
 // USEFUL MACROS
 //#define DEBUG_PRINT
+//#define DEBUG_PRINT_V2
 #define SANITY_CHECK
 #define LLC_BYPASS
 #define DRC_BYPASS
 #define NO_CRC2_COMPILE
 
+#define ENABLE_EXTRA_CACHE_STATS
+//#define ALWAYS_HIT
+//#define ALWAYS_MISS
+//#define NO_IMISS
 //#ifdef MULTIPLE_PAGE_SIZE
 //#define BASE_PAGE_SIZE 4096
 //#define LOG2_BASE_PAGE_SIZE lg2(BASE_PAGE_SIZE)
@@ -28,6 +34,12 @@
 #define DP(x)
 #endif
 #define _DP(x)
+
+#ifdef DEBUG_PRINT_V2
+#define DP2(x) x
+#else
+#define DP2(x)
+#endif
 
 // CACHE
 #define INFLIGHT 1

@@ -52,6 +52,16 @@ void record_roi_stats(uint32_t cpu, CACHE* cache)
     cache->roi_access[cpu][i] = cache->sim_access[cpu][i];
     cache->roi_hit[cpu][i] = cache->sim_hit[cpu][i];
     cache->roi_miss[cpu][i] = cache->sim_miss[cpu][i];
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		cache->roi_daccess[cpu][i] = cache->sim_daccess[cpu][i];
+		cache->roi_dhit[cpu][i] = cache->sim_dhit[cpu][i];
+		cache->roi_dmiss[cpu][i] = cache->sim_dmiss[cpu][i];
+
+		cache->roi_iaccess[cpu][i] = cache->sim_iaccess[cpu][i];
+		cache->roi_ihit[cpu][i] = cache->sim_ihit[cpu][i];
+		cache->roi_imiss[cpu][i] = cache->sim_imiss[cpu][i];
+#endif
   }
 }
 
@@ -59,15 +69,37 @@ void print_roi_stats(uint32_t cpu, CACHE* cache)
 {
   uint64_t TOTAL_ACCESS = 0, TOTAL_HIT = 0, TOTAL_MISS = 0;
 
+#ifdef ENABLE_EXTRA_CACHE_STATS 
+	uint64_t TOTAL_dACCESS = 0, TOTAL_dHIT = 0, TOTAL_dMISS = 0;
+	uint64_t TOTAL_iACCESS = 0, TOTAL_iHIT = 0, TOTAL_iMISS = 0;
+#endif
+
   for (uint32_t i = 0; i < NUM_TYPES; i++) {
     TOTAL_ACCESS += cache->roi_access[cpu][i];
     TOTAL_HIT += cache->roi_hit[cpu][i];
     TOTAL_MISS += cache->roi_miss[cpu][i];
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		TOTAL_dACCESS += cache->roi_daccess[cpu][i];
+		TOTAL_dHIT += cache->roi_dhit[cpu][i];
+		TOTAL_dMISS += cache->roi_dmiss[cpu][i];
+
+		TOTAL_iACCESS += cache->roi_iaccess[cpu][i];
+		TOTAL_iHIT += cache->roi_ihit[cpu][i];
+		TOTAL_iMISS += cache->roi_imiss[cpu][i];
+#endif
   }
 
   if (TOTAL_ACCESS > 0) {
     cout << cache->NAME;
-    cout << " TOTAL     ACCESS: " << setw(10) << TOTAL_ACCESS << "  HIT: " << setw(10) << TOTAL_HIT << "  MISS: " << setw(10) << TOTAL_MISS << endl;
+#ifdef ENABLE_EXTRA_CACHE_STATS 
+		cout << " TOTAL     ACCESS: " << setw(10) << TOTAL_ACCESS << "  HIT: " << setw(10) << TOTAL_HIT << "  MISS: " << setw(10) << TOTAL_MISS 
+				 << "  iACCESS: " << setw(10) << TOTAL_iACCESS << "  iHIT: " << setw(10) << TOTAL_iHIT  << "  iMISS: " << setw(10) << TOTAL_iMISS
+				 << "  dACCESS: " << setw(10) << TOTAL_dACCESS << "  dHIT: " << setw(10) << TOTAL_dHIT  << "  dMISS: " << setw(10) << TOTAL_dMISS << endl;
+				 assert((TOTAL_iACCESS + TOTAL_dACCESS) == TOTAL_ACCESS);
+#else
+		cout << " TOTAL     ACCESS: " << setw(10) << TOTAL_ACCESS << "  HIT: " << setw(10) << TOTAL_HIT << "  MISS: " << setw(10) << TOTAL_MISS << endl;
+#endif
 
     cout << cache->NAME;
     cout << " LOAD      ACCESS: " << setw(10) << cache->roi_access[cpu][0] << "  HIT: " << setw(10) << cache->roi_hit[cpu][0] << "  MISS: " << setw(10)
@@ -95,9 +127,18 @@ void print_roi_stats(uint32_t cpu, CACHE* cache)
 
     cout << cache->NAME;
     cout << " AVERAGE MISS LATENCY: " << (1.0 * (cache->total_miss_latency)) / TOTAL_MISS << " cycles" << endl;
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		cout << cache->NAME;
+    cout << " AVERAGE iMISS LATENCY: " << (1.0 * (cache->total_imiss_latency)) / TOTAL_iMISS << " cycles" << endl;
+		cout << cache->NAME;
+    cout << " AVERAGE dMISS LATENCY: " << (1.0 * (cache->total_dmiss_latency)) / TOTAL_dMISS << " cycles" << endl;
+#endif
     // cout << " AVERAGE MISS LATENCY: " <<
     // (cache->total_miss_latency)/TOTAL_MISS << " cycles " <<
     // cache->total_miss_latency << "/" << TOTAL_MISS<< endl;
+#ifdef ENABLE_EXTRA_CACHE_STATS 
+		cache->save_miss_latencies();
+#endif
   }
 }
 
@@ -241,6 +282,16 @@ void reset_cache_stats(uint32_t cpu, CACHE* cache)
     cache->sim_access[cpu][i] = 0;
     cache->sim_hit[cpu][i] = 0;
     cache->sim_miss[cpu][i] = 0;
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+    cache->sim_iaccess[cpu][i] = 0;
+    cache->sim_ihit[cpu][i] = 0;
+    cache->sim_imiss[cpu][i] = 0;
+
+		cache->sim_daccess[cpu][i] = 0;
+    cache->sim_dhit[cpu][i] = 0;
+    cache->sim_dmiss[cpu][i] = 0;
+#endif
   }
 
   cache->pf_requested = 0;
@@ -250,6 +301,11 @@ void reset_cache_stats(uint32_t cpu, CACHE* cache)
   cache->pf_fill = 0;
 
   cache->total_miss_latency = 0;
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	cache->total_imiss_latency = 0;
+	cache->total_dmiss_latency = 0;
+#endif
 
   cache->RQ_ACCESS = 0;
   cache->RQ_MERGED = 0;
@@ -375,9 +431,8 @@ int main(int argc, char** argv)
   std::cout << std::endl;
 #ifdef MULTIPLE_PAGE_SIZE 
 	std::cout << "VirtualMemory physical capacity (reserved for small pages): " << std::size(vmem.small_ppage_free_list) * vmem.small_page_size;
-	std::cout << "VirtualMemory physical capacity (reserved for large pages): " << std::size(vmem.large_ppage_free_list) * vmem.large_page_size;
-  
 	std::cout << " num_small_ppages: " << std::size(vmem.small_ppage_free_list) << std::endl;
+	std::cout << "VirtualMemory physical capacity (reserved for large pages): " << std::size(vmem.large_ppage_free_list) * vmem.large_page_size;
 	std::cout << " num_large_ppages: " << std::size(vmem.large_ppage_free_list) << std::endl;
 
 	std::cout << "VirtualMemory base page size: " << BASE_PAGE_SIZE << " base log2_page_size: " << LOG2_BASE_PAGE_SIZE << std::endl;

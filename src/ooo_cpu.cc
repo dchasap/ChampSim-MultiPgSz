@@ -257,7 +257,7 @@ void O3_CPU::init_instruction(ooo_model_instr arch_instr)
 
   instr_unique_id++;
 	// Debug print
-	arch_instr.print();
+	DP( arch_instr.print(); );
 }
 
 void O3_CPU::check_dib()
@@ -294,8 +294,10 @@ void O3_CPU::do_check_dib(ooo_model_instr& instr)
 
 void O3_CPU::translate_fetch()
 {
-  if (IFETCH_BUFFER.empty())
+  if (IFETCH_BUFFER.empty()) {
+		DP( std::cout << "[translate_fetch]: instruction buffer empty" << std::endl; )
     return;
+	}
 
   // scan through IFETCH_BUFFER to find instructions that need to be translated
   auto itlb_req_begin = std::find_if(IFETCH_BUFFER.begin(), IFETCH_BUFFER.end(), [](const ooo_model_instr& x) { return !x.translated; });
@@ -323,9 +325,19 @@ void O3_CPU::do_translate_fetch(champsim::circular_buffer<ooo_model_instr>::iter
   trace_packet.asid[0] = 0;
   trace_packet.asid[1] = 0;
   trace_packet.to_return = {&ITLB_bus};
+	
+#ifdef MULTIPLE_PAGE_SIZE
+	trace_packet.page_size = BASE_PAGE_SIZE;
+	trace_packet.base_vpn = begin->ip;
+#endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	trace_packet.is_instr = true;
+#endif
+
+	//TODO: this needs to pass page size?
   for (; begin != end; ++begin)
     trace_packet.instr_depend_on_me.push_back(begin); // I think depends on me here means they are on the same page?
-
   int rq_index = ITLB_bus.lower_level->add_rq(&trace_packet);
 
   if (rq_index != -2) {
@@ -382,10 +394,13 @@ void O3_CPU::do_fetch_instruction(champsim::circular_buffer<ooo_model_instr>::it
 
 #ifdef MULTIPLE_PAGE_SIZE
 	fetch_packet.page_size = BASE_PAGE_SIZE; // Instructions are always allocated on 4KB pages
-	fetch_packet.base_vpn = begin->instruction_pa;
-#else
-
+	fetch_packet.base_vpn = begin->ip; //TODO: check giorgos version
 #endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	fetch_packet.is_instr = true;
+#endif
+
   for (; begin != end; ++begin)
     fetch_packet.instr_depend_on_me.push_back(begin);
 
@@ -495,7 +510,11 @@ void O3_CPU::dispatch_instruction()
     throw champsim::deadlock{cpu};
 }
 
+#ifdef ENABLE_EXTRA_CACHE_STATS
+int O3_CPU::prefetch_code_line(uint64_t pf_v_addr) { return static_cast<CACHE*>(L1I_bus.lower_level)->prefetch_line(0, pf_v_addr, pf_v_addr, true, 1); }
+#else
 int O3_CPU::prefetch_code_line(uint64_t pf_v_addr) { return static_cast<CACHE*>(L1I_bus.lower_level)->prefetch_line(0, pf_v_addr, pf_v_addr, true, 0); }
+#endif
 
 void O3_CPU::schedule_instruction()
 {
@@ -716,6 +735,7 @@ void O3_CPU::add_load_queue(champsim::circular_buffer<ooo_model_instr>::iterator
   lq_it->event_cycle = current_cycle + SCHEDULING_LATENCY;
 
 #ifdef MULTIPLE_PAGE_SIZE
+	DP( std::cout << "load::PAGE_SIZE:" << (uint32_t)rob_it->source_page_size[data_index] << std::endl; );
 	lq_it->page_size = (rob_it->source_page_size[data_index]?LARGE_PAGE_SIZE:BASE_PAGE_SIZE);
 	if (lq_it->page_size == BASE_PAGE_SIZE) total_base_pages++;
 	else if (lq_it->page_size == LARGE_PAGE_SIZE) total_large_pages++;
@@ -762,11 +782,16 @@ void O3_CPU::add_store_queue(champsim::circular_buffer<ooo_model_instr>::iterato
   sq_it->event_cycle = current_cycle + SCHEDULING_LATENCY;
 
 #ifdef MULTIPLE_PAGE_SIZE
+	DP( std::cout << "store::PAGE_SIZE:" << (uint32_t)rob_it->source_page_size[data_index] << std::endl; );
 	sq_it->page_size = (rob_it->destination_page_size[data_index]?LARGE_PAGE_SIZE:BASE_PAGE_SIZE);
 	if (sq_it->page_size == BASE_PAGE_SIZE) total_base_pages++;
 	else if (sq_it->page_size == LARGE_PAGE_SIZE) total_large_pages++;
 	else assert(0);
 	sq_it->base_vpn = rob_it->destination_base_vpn[data_index];
+#endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	sq_it->is_instr = false; //FIXME: not sure about this
 #endif
 
   // succesfully added to the store queue
@@ -847,9 +872,15 @@ int O3_CPU::do_translate_store(std::vector<LSQ_ENTRY>::iterator sq_it)
   data_packet.sq_index_depend_on_me = {sq_it};
 
 #ifdef MULTIPLE_PAGE_SIZE
+	DP( std::cout << "Do translate store: page_size:" << sq_it->page_size << std::endl; );
 	data_packet.page_size = sq_it->page_size;
 	data_packet.base_vpn = sq_it->base_vpn;
 #endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	data_packet.is_instr = sq_it->is_instr;
+#endif
+
 
   _DP(if (warmup_complete[cpu]) {
     std::cout << "[RTS0] " << __func__ << " instr_id: " << sq_it->instr_id << " rob_index: " << sq_it->rob_index << " is popped from to RTS0" << std::endl;
@@ -915,9 +946,15 @@ int O3_CPU::do_translate_load(std::vector<LSQ_ENTRY>::iterator lq_it)
   data_packet.lq_index_depend_on_me = {lq_it};
 
 #ifdef MULTIPLE_PAGE_SIZE
+	DP( std::cout << "Do translate load: page_size:" << lq_it->page_size << std::endl; );
 	data_packet.page_size = lq_it->page_size;
 	data_packet.base_vpn = lq_it->base_vpn;
 #endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	data_packet.is_instr = lq_it->is_instr;
+#endif
+
 
   _DP(if (warmup_complete[cpu]) {
     std::cout << "[RTL0] " << __func__ << " instr_id: " << lq_it->instr_id << " rob_index: " << lq_it->rob_index << " is popped to RTL0" << std::endl;
@@ -948,8 +985,13 @@ int O3_CPU::execute_load(std::vector<LSQ_ENTRY>::iterator lq_it)
   data_packet.lq_index_depend_on_me = {lq_it};
 
 #ifdef MULTIPLE_PAGE_SIZE
+	DP( std::cout << "Do execute load: page_size:" << lq_it->page_size << std::endl; );
 	data_packet.page_size = lq_it->page_size;
 	data_packet.base_vpn = lq_it->base_vpn;
+#endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	data_packet.is_instr = lq_it->is_instr;
 #endif
 
   int rq_index = L1D_bus.lower_level->add_rq(&data_packet);
@@ -1182,9 +1224,16 @@ void O3_CPU::retire_rob()
         data_packet.asid[0] = sq_it->asid[0];
         data_packet.asid[1] = sq_it->asid[1];
 #ifdef MULTIPLE_PAGE_SIZE
+				DP( std::cout << "Do retire rob: page_size:" << sq_it->page_size << std::endl; );
 				data_packet.page_size = sq_it->page_size;
 				data_packet.base_vpn = sq_it->base_vpn;
 #endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+				data_packet.is_instr = sq_it->is_instr;
+#endif
+
+
         auto result = L1D_bus.lower_level->add_wq(&data_packet);
         if (result != -2) {
           ROB.front().destination_memory[i] = 0;

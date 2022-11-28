@@ -5,6 +5,7 @@
 #include <list>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "champsim.h"
 #include "delay_queue.hpp"
@@ -44,8 +45,29 @@ public:
 
   std::list<PACKET> MSHR; // MSHR
 
+#ifdef ALWAYS_HIT 
+	std::list<PACKET> MISS_PACKETS; 
+#endif
+
   uint64_t sim_access[NUM_CPUS][NUM_TYPES] = {}, sim_hit[NUM_CPUS][NUM_TYPES] = {}, sim_miss[NUM_CPUS][NUM_TYPES] = {}, roi_access[NUM_CPUS][NUM_TYPES] = {},
            roi_hit[NUM_CPUS][NUM_TYPES] = {}, roi_miss[NUM_CPUS][NUM_TYPES] = {};
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	uint64_t sim_iaccess[NUM_CPUS][NUM_TYPES] = {}, sim_ihit[NUM_CPUS][NUM_TYPES] = {}, sim_imiss[NUM_CPUS][NUM_TYPES] = {}, 
+					 roi_iaccess[NUM_CPUS][NUM_TYPES] = {}, roi_ihit[NUM_CPUS][NUM_TYPES] = {}, roi_imiss[NUM_CPUS][NUM_TYPES] = {};
+
+	uint64_t sim_daccess[NUM_CPUS][NUM_TYPES] = {}, sim_dhit[NUM_CPUS][NUM_TYPES] = {}, sim_dmiss[NUM_CPUS][NUM_TYPES] = {}, 
+					 roi_daccess[NUM_CPUS][NUM_TYPES] = {}, roi_dhit[NUM_CPUS][NUM_TYPES] = {}, roi_dmiss[NUM_CPUS][NUM_TYPES] = {};
+
+	uint64_t total_imiss_latency = 0, total_dmiss_latency = 0;
+
+	std::map<uint64_t, uint64_t> instr_miss_latencies; 
+	std::map<uint64_t, uint64_t> data_miss_latencies; 
+
+	void init_cache_stats_monitor();
+	void add_miss_latency(bool is_instr, uint8_t packet_latency);
+	void save_miss_latencies();
+#endif
 
   uint64_t RQ_ACCESS = 0, RQ_MERGED = 0, RQ_FULL = 0, RQ_TO_CACHE = 0, PQ_ACCESS = 0, PQ_MERGED = 0, PQ_FULL = 0, PQ_TO_CACHE = 0, WQ_ACCESS = 0, WQ_MERGED = 0,
            WQ_FULL = 0, WQ_FORWARD = 0, WQ_TO_CACHE = 0;
@@ -84,6 +106,10 @@ public:
   bool readlike_miss(PACKET& handle_pkt);
   bool filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt);
 
+#ifdef ALWAYS_HIT
+	void fake_readlike_hit(PACKET& handle_pkt);
+#endif
+
   bool should_activate_prefetcher(int type);
 
   void print_deadlock() override;
@@ -102,7 +128,12 @@ public:
         MAX_WRITE(max_write), prefetch_as_load(pref_load), match_offset_bits(wq_full_addr), virtual_prefetch(va_pref), pref_activate_mask(pref_act_mask),
         repl_type(repl), pref_type(pref)
   {
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		init_cache_stats_monitor();
+#endif
   }
 };
+
+
 
 #endif

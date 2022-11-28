@@ -29,6 +29,10 @@ public:
 	uint64_t page_size;
 	uint64_t vpn;
 #endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	bool is_instr = false;
+#endif
 };
 
 class MemoryRequestConsumer

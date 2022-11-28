@@ -59,6 +59,18 @@ void PageTableWalker::handle_read()
 		packet.base_vpn = handle_pkt.base_vpn;
 #endif
 
+		DP( std::cout << "- [PTW_HANDLE_FILL] NEW PACKET -" << std::endl;
+				std::cout << "fill_level:" << setw(10) << (uint32_t)packet.fill_level << std::endl;
+				std::cout << "   address:" << setw(10) << std::hex << packet.address << std::dec << std::endl;
+				std::cout << "  vaddress:" << setw(10) << std::hex << packet.v_address << std::dec << std::endl;
+				std::cout << "       cpu:" << setw(10) << packet.cpu << std::endl;
+				std::cout << "      type:" << setw(10) << (uint32_t)packet.type << std::endl;
+#ifdef MULTIPLE_PAGE_SIZE
+				std::cout << " page_size:" << setw(10) << packet.page_size << std::endl;
+				std::cout << "  base_vpn:" << setw(10) << packet.base_vpn << std::endl;
+#endif
+			);
+
     int rq_index = lower_level->add_rq(&packet);
     if (rq_index == -2)
       return;
@@ -77,27 +89,49 @@ void PageTableWalker::handle_read()
 
 void PageTableWalker::handle_fill()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::handle_fill]" << std::endl; );
   int fill_this_cycle = MAX_FILL;
 
   while (fill_this_cycle > 0 && !std::empty(MSHR) && MSHR.front().event_cycle <= current_cycle) {
     auto fill_mshr = MSHR.begin();
+/*
+		DP( std::cout << "PAGE_SIZE:" << fill_mshr->page_size << "\n"; );
+		DP( std::cout << "Address:" << std::hex << fill_mshr->address << "\n"; );
+		DP( std::cout << "V_address:" << std::hex << fill_mshr->v_address << "\n"; );
+		DP( std::cout << "translation_level:" << std::hex << (uint32_t)fill_mshr->translation_level << "\n"; );
+		DP( std::cout << "PSCL5.level:" << (uint32_t)PSCL5.level << std::endl; );
+		DP( std::cout << "PSCL4.level:" << (uint32_t)PSCL4.level << std::endl; );
+		DP( std::cout << "PSCL3.level:" << (uint32_t)PSCL3.level << std::endl; );
+		DP( std::cout << "PSCL2.level:" << (uint32_t)PSCL2.level << std::endl; );
+*/
+
+#ifdef MULTIPLE_PAGE_SIZE
+		if (fill_mshr->translation_level == 1 && fill_mshr->page_size == LARGE_PAGE_SIZE) {
+			DP( std::cout << "Large page found, skipping PSCL5" << std::endl; );
+			fill_mshr->translation_level--;
+		}
+#endif
+
     if (fill_mshr->translation_level == 0) // If translation complete
     {
       // Return the translated physical address to STLB. Does not contain last
       // 12 bits
 #ifdef MULTIPLE_PAGE_SIZE
+			DP( std::cout << "FILL_PTW: PAGE_SIZE=" << fill_mshr->page_size << std::endl; );
       auto [addr, fault] = vmem.va_to_pa(cpu, fill_mshr->v_address, lg2(fill_mshr->page_size));
 #else
       auto [addr, fault] = vmem.va_to_pa(cpu, fill_mshr->v_address, LOG2_PAGE_SIZE);
 #endif
+	
 			if (warmup_complete[cpu] && fault) {
+				DP ( std::cout << "Page_Fault" << std::endl; );
         fill_mshr->event_cycle = current_cycle + vmem.minor_fault_penalty;
         MSHR.sort(ord_event_cycle<PACKET>{});
       } else {
         fill_mshr->data = addr;
         fill_mshr->address = fill_mshr->v_address;
-
-        DP(if (warmup_complete[fill_mshr->cpu]) {
+				DP( std::cout << "Page Found" << std::endl;);
+        DP(if (warmup_complete[fill_mshr->cpu] || 1) {
           std::cout << "[" << NAME << "] " << __func__ << " instr_id: " << fill_mshr->instr_id;
           std::cout << " address: " << std::hex << (fill_mshr->address >> LOG2_PAGE_SIZE) << " full_addr: " << fill_mshr->address;
           std::cout << " full_v_addr: " << fill_mshr->v_address;
@@ -121,16 +155,25 @@ void PageTableWalker::handle_fill()
         fill_mshr->event_cycle = current_cycle + vmem.minor_fault_penalty;
         MSHR.sort(ord_event_cycle<PACKET>{});
       } else {
-        if (fill_mshr->translation_level == PSCL5.level)
+        if (fill_mshr->translation_level == PSCL5.level) {
+					DP( std::cout << "PSCL5" << std::endl; );
           PSCL5.fill_cache(addr, fill_mshr->v_address);
-        if (fill_mshr->translation_level == PSCL4.level)
+				}
+        if (fill_mshr->translation_level == PSCL4.level) {
+					DP( std::cout << "PSCL4" << std::endl; );
           PSCL4.fill_cache(addr, fill_mshr->v_address);
-        if (fill_mshr->translation_level == PSCL2.level)
+				}
+				if (fill_mshr->translation_level == PSCL3.level) {
+					DP( std::cout << "PSCL3" << std::endl; );
           PSCL3.fill_cache(addr, fill_mshr->v_address);
-        if (fill_mshr->translation_level == PSCL2.level)
-          PSCL2.fill_cache(addr, fill_mshr->v_address);
 
-        DP(if (warmup_complete[fill_mshr->cpu]) {
+				}
+        if (fill_mshr->translation_level == PSCL2.level && 0) {
+						DP( std::cout << "PSCL2" << std::endl; );
+						PSCL2.fill_cache(addr, fill_mshr->v_address);
+				}
+
+        DP(if (warmup_complete[fill_mshr->cpu] || 1) {
           std::cout << "[" << NAME << "] " << __func__ << " instr_id: " << fill_mshr->instr_id;
 #ifdef MULTIPLE_PAGE_SIZE
           std::cout << " address: " << std::hex << (fill_mshr->address >> lg2(fill_mshr->page_size)) << " full_addr: " << fill_mshr->address << " (" << fill_mshr->page_size << ")";
@@ -156,7 +199,19 @@ void PageTableWalker::handle_fill()
 				packet.base_vpn = fill_mshr->base_vpn;
 #endif
 
-				int rq_index = lower_level->add_rq(&packet);
+/*
+				DP( std::cout << "- [PTW_HANDLE_FILL] NEW PACKET -" << std::endl;
+						std::cout << "fill_level:" << setw(10) << (uint32_t)packet.fill_level << std::endl;
+						std::cout << "   address:" << setw(10) << std::hex << packet.address << std::dec << std::endl;
+						std::cout << "  vaddress:" << setw(10) << std::hex << packet.v_address << std::dec << std::endl;
+						std::cout << "       cpu:" << setw(10) << packet.cpu << std::endl;
+						std::cout << "      type:" << setw(10) << (uint32_t)packet.type << std::endl;
+						std::cout << " page_size:" << setw(10) << packet.page_size << std::endl;
+						std::cout << "  base_vpn:" << setw(10) << packet.base_vpn << std::endl;
+					);
+*/
+
+				int rq_index = lower_level->add_rq(&packet); // Don't get what's going on here, is this a check for successful read?
         if (rq_index != -2) {
           fill_mshr->event_cycle = std::numeric_limits<uint64_t>::max();
           fill_mshr->address = packet.address;
@@ -262,8 +317,7 @@ std::optional<uint64_t> PagingStructureCache::check_hit(uint64_t address)
   auto set_end = std::next(set_begin, NUM_WAY);
   auto hit_block = std::find_if(set_begin, set_end, eq_addr<block_t>{address, vmem.shamt(level + 1)});
 
-  if (hit_block != set_end)
-		// FIXME: not sure about this
+	if (hit_block != set_end)
     return splice_bits(hit_block->data, vmem.get_offset(address, level) * PTE_BYTES, LOG2_PAGE_SIZE);
 
   return {};

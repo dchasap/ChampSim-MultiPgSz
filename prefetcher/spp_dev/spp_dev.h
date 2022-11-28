@@ -56,11 +56,11 @@ public:
 
   SIGNATURE_TABLE()
   {
-    cout << "Initialize SIGNATURE TABLE" << endl;
-    cout << "ST_SET: " << ST_SET << endl;
-    cout << "ST_WAY: " << ST_WAY << endl;
-    cout << "ST_TAG_BIT: " << ST_TAG_BIT << endl;
-    cout << "ST_TAG_MASK: " << hex << ST_TAG_MASK << dec << endl;
+    //cout << "Initialize SIGNATURE TABLE" << endl;
+    //cout << "ST_SET: " << ST_SET << endl;
+    //cout << "ST_WAY: " << ST_WAY << endl;
+    //cout << "ST_TAG_BIT: " << ST_TAG_BIT << endl;
+    //cout << "ST_TAG_MASK: " << hex << ST_TAG_MASK << dec << endl;
 
     for (uint32_t set = 0; set < ST_SET; set++)
       for (uint32_t way = 0; way < ST_WAY; way++) {
@@ -83,12 +83,12 @@ public:
 
   PATTERN_TABLE()
   {
-    cout << endl << "Initialize PATTERN TABLE" << endl;
-    cout << "PT_SET: " << PT_SET << endl;
-    cout << "PT_WAY: " << PT_WAY << endl;
-    cout << "SIG_DELTA_BIT: " << SIG_DELTA_BIT << endl;
-    cout << "C_SIG_BIT: " << C_SIG_BIT << endl;
-    cout << "C_DELTA_BIT: " << C_DELTA_BIT << endl;
+    //cout << endl << "Initialize PATTERN TABLE" << endl;
+    //cout << "PT_SET: " << PT_SET << endl;
+    //cout << "PT_WAY: " << PT_WAY << endl;
+    //cout << "SIG_DELTA_BIT: " << SIG_DELTA_BIT << endl;
+    //cout << "C_SIG_BIT: " << C_SIG_BIT << endl;
+    //cout << "C_DELTA_BIT: " << C_DELTA_BIT << endl;
 
     for (uint32_t set = 0; set < PT_SET; set++) {
       for (uint32_t way = 0; way < PT_WAY; way++) {
@@ -112,8 +112,8 @@ public:
 
   PREFETCH_FILTER()
   {
-    cout << endl << "Initialize PREFETCH FILTER" << endl;
-    cout << "FILTER_SET: " << FILTER_SET << endl;
+    //cout << endl << "Initialize PREFETCH FILTER" << endl;
+    //cout << "FILTER_SET: " << FILTER_SET << endl;
 
     for (uint32_t set = 0; set < FILTER_SET; set++) {
       remainder_tag[set] = 0;

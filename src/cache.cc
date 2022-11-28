@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <fstream>
 
 #include "champsim.h"
 #include "champsim_constants.h"
@@ -12,11 +13,24 @@
 #define NDEBUG
 #endif
 
+#ifdef ALWAYS_HIT
+//#define HIT_CONDITION (NAME.compare("cpu0_STLB") == 0 && handle_pkt.is_instr) 
+#define HIT_CONDITION (NAME.compare("cpu0_STLB") == 0 && !handle_pkt.is_instr) 
+//#define HIT_CONDITION (NAME.compare("cpu0_STLB") == 0) 
+#endif
+
+#ifdef ALWAYS_MISS
+#define MISS_CONDITION (NAME.compare("cpu0_STLB") == 0 && handle_pkt.is_instr) 
+//#define MISS_CONDITION (NAME.compare("cpu0_STLB") == 0 && !handle_pkt.is_instr) 
+//#define MISS_CONDITION (NAME.compare("cpu0_STLB") == 0) 
+#endif
+
 extern VirtualMemory vmem;
 extern uint8_t warmup_complete[NUM_CPUS];
 
 void CACHE::handle_fill()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::handle_fill]" << std::endl; );
   while (writes_available_this_cycle > 0) {
     auto fill_mshr = MSHR.begin();
     if (fill_mshr == std::end(MSHR) || fill_mshr->event_cycle > current_cycle)
@@ -64,6 +78,7 @@ void CACHE::handle_fill()
 
 void CACHE::handle_writeback()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::handle_writeback]" << std::endl; );
   while (writes_available_this_cycle > 0) {
     if (!WQ.has_ready())
       return;
@@ -77,18 +92,59 @@ void CACHE::handle_writeback()
 
     BLOCK& fill_block = block[set * NUM_WAY + way];
 
+#ifdef ALWAYS_MISS
+		if (MISS_CONDITION) {
+			way = NUM_WAY;
+		}
+#endif
+
     if (way < NUM_WAY) // HIT
-    {
+		{
       impl_replacement_update_state(handle_pkt.cpu, set, way, fill_block.address, handle_pkt.ip, 0, handle_pkt.type, 1);
 
       // COLLECT STATS
       sim_hit[handle_pkt.cpu][handle_pkt.type]++;
       sim_access[handle_pkt.cpu][handle_pkt.type]++;
 
+#ifdef ENABLE_EXTRA_CACHE_STATS
+			if (handle_pkt.is_instr && handle_pkt.type != TRANSLATION) {
+				sim_ihit[handle_pkt.cpu][handle_pkt.type]++;
+				sim_iaccess[handle_pkt.cpu][handle_pkt.type]++;
+			} else {
+				sim_dhit[handle_pkt.cpu][handle_pkt.type]++;
+				sim_daccess[handle_pkt.cpu][handle_pkt.type]++;	
+			}
+#endif
+
       // mark dirty
       fill_block.dirty = 1;
     } else // MISS
     {
+#ifdef ALWAYS_HIT
+			if (HIT_CONDITION) {
+				fake_readlike_hit(handle_pkt);
+			} else {
+		    bool success;
+	      if (handle_pkt.type == RFO && handle_pkt.to_return.empty()) {
+        success = readlike_miss(handle_pkt);
+			  } else {
+				  // find victim
+					auto set_begin = std::next(std::begin(block), set * NUM_WAY);
+					auto set_end = std::next(set_begin, NUM_WAY);
+					auto first_inv = std::find_if_not(set_begin, set_end, is_valid<BLOCK>());
+					way = std::distance(set_begin, first_inv);
+					if (way == NUM_WAY)
+						way = impl_replacement_find_victim(handle_pkt.cpu, handle_pkt.instr_id, set, 
+																							&block.data()[set * NUM_WAY], handle_pkt.ip, 
+																							handle_pkt.address, handle_pkt.type);
+
+					success = filllike_miss(set, way, handle_pkt);
+				}
+
+				if (!success)
+					return;
+			}
+#else
       bool success;
       if (handle_pkt.type == RFO && handle_pkt.to_return.empty()) {
         success = readlike_miss(handle_pkt);
@@ -107,7 +163,8 @@ void CACHE::handle_writeback()
 
       if (!success)
         return;
-    }
+#endif
+		}
 
     // remove this entry from WQ
     writes_available_this_cycle--;
@@ -117,6 +174,7 @@ void CACHE::handle_writeback()
 
 void CACHE::handle_read()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::handle_read]" << std::endl; );
   while (reads_available_this_cycle > 0) {
 
     if (!RQ.has_ready())
@@ -132,13 +190,29 @@ void CACHE::handle_read()
     uint32_t set = get_set(handle_pkt.address);
     uint32_t way = get_way(handle_pkt.address, set);
 
+#ifdef ALWAYS_MISS
+		if (MISS_CONDITION) {
+			way = NUM_WAY;
+		}
+#endif
+
     if (way < NUM_WAY) // HIT
     {
       readlike_hit(set, way, handle_pkt);
     } else {
-      bool success = readlike_miss(handle_pkt);
+#ifdef ALWAYS_HIT
+			if (HIT_CONDITION) {
+				fake_readlike_hit(handle_pkt);
+			} else {
+				bool success = readlike_miss(handle_pkt);
+		    if (!success)
+			    return;
+			}
+#else
+			bool success = readlike_miss(handle_pkt);
       if (!success)
         return;
+#endif
     }
 
     // remove this entry from RQ
@@ -149,6 +223,7 @@ void CACHE::handle_read()
 
 void CACHE::handle_prefetch()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::handle_prefetch]" << std::endl; );
   while (reads_available_this_cycle > 0) {
     if (!PQ.has_ready())
       return;
@@ -159,13 +234,29 @@ void CACHE::handle_prefetch()
     uint32_t set = get_set(handle_pkt.address);
     uint32_t way = get_way(handle_pkt.address, set);
 
+#ifdef ALWAYS_MISS
+		if (MISS_CONDITION) {
+			way = NUM_WAY;
+		}
+#endif
+
     if (way < NUM_WAY) // HIT
     {
       readlike_hit(set, way, handle_pkt);
     } else {
+#ifdef ALWAYS_HIT
+			if (HIT_CONDITION) {
+				fake_readlike_hit(handle_pkt);
+			} else {
+				bool success = readlike_miss(handle_pkt);
+		    if (!success)
+			    return;
+			}
+#else
       bool success = readlike_miss(handle_pkt);
       if (!success)
         return;
+#endif
     }
 
     // remove this entry from PQ
@@ -173,6 +264,30 @@ void CACHE::handle_prefetch()
     reads_available_this_cycle--;
   }
 }
+
+#ifdef ALWAYS_HIT
+void CACHE::fake_readlike_hit(PACKET& handle_pkt)
+{
+	handle_pkt.data = 0xdeadbeef;
+	
+	// COLLECT STATS
+  sim_hit[handle_pkt.cpu][handle_pkt.type]++;
+  sim_access[handle_pkt.cpu][handle_pkt.type]++;
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	if (handle_pkt.is_instr && handle_pkt.type != TRANSLATION) {
+		sim_ihit[handle_pkt.cpu][handle_pkt.type]++;
+		sim_iaccess[handle_pkt.cpu][handle_pkt.type]++;
+	} else {
+		sim_dhit[handle_pkt.cpu][handle_pkt.type]++;
+		sim_daccess[handle_pkt.cpu][handle_pkt.type]++;
+	}
+#endif
+
+	for (auto ret : handle_pkt.to_return)
+    ret->return_data(&handle_pkt);
+}
+#endif
 
 void CACHE::readlike_hit(std::size_t set, std::size_t way, PACKET& handle_pkt)
 {
@@ -208,6 +323,16 @@ void CACHE::readlike_hit(std::size_t set, std::size_t way, PACKET& handle_pkt)
   // COLLECT STATS
   sim_hit[handle_pkt.cpu][handle_pkt.type]++;
   sim_access[handle_pkt.cpu][handle_pkt.type]++;
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	if (handle_pkt.is_instr && handle_pkt.type != TRANSLATION) {
+		sim_ihit[handle_pkt.cpu][handle_pkt.type]++;
+		sim_iaccess[handle_pkt.cpu][handle_pkt.type]++;
+	} else {
+		sim_dhit[handle_pkt.cpu][handle_pkt.type]++;
+		sim_daccess[handle_pkt.cpu][handle_pkt.type]++;
+	}
+#endif
 
   for (auto ret : handle_pkt.to_return)
     ret->return_data(&handle_pkt);
@@ -339,6 +464,9 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
 			writeback_packet.base_vpn = handle_pkt.base_vpn;
 #endif
 
+#ifdef ENABLE_EXTRA_CACHE_STATS
+			writeback_packet.is_instr = handle_pkt.is_instr;
+#endif	
       auto result = lower_level->add_wq(&writeback_packet);
       if (result == -2)
         return false;
@@ -366,11 +494,31 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
     fill_block.instr_id = handle_pkt.instr_id;
 #ifdef MULTIPLE_PAGE_SIZE
 		fill_block.page_size = handle_pkt.page_size;
-#endif 
+#endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		fill_block.is_instr = handle_pkt.is_instr;
+#endif	
   }
 
-  if (warmup_complete[handle_pkt.cpu] && (handle_pkt.cycle_enqueued != 0))
+  if (warmup_complete[handle_pkt.cpu] && (handle_pkt.cycle_enqueued != 0)) {
     total_miss_latency += current_cycle - handle_pkt.cycle_enqueued;
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+		if (handle_pkt.is_instr && handle_pkt.type != TRANSLATION)
+			total_imiss_latency += current_cycle - handle_pkt.cycle_enqueued;
+		else
+			total_dmiss_latency += current_cycle - handle_pkt.cycle_enqueued;
+
+		add_miss_latency(handle_pkt.is_instr, current_cycle - handle_pkt.cycle_enqueued);
+/*
+		if (warmup_complete[handle_pkt.cpu] && (handle_pkt.cycle_enqueued != 0)) {
+			std::cout << (handle_pkt.is_instr?"[return_data] Instr packet ":"[return_data] Data packet ") << "latency:" 
+								<< (current_cycle - handle_pkt.cycle_enqueued) << std::endl;
+		}
+*/
+#endif
+	}
 
   // update prefetcher
   cpu = handle_pkt.cpu;
@@ -385,11 +533,22 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
   sim_miss[handle_pkt.cpu][handle_pkt.type]++;
   sim_access[handle_pkt.cpu][handle_pkt.type]++;
 
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	if (handle_pkt.is_instr && handle_pkt.type != TRANSLATION) {
+		sim_imiss[handle_pkt.cpu][handle_pkt.type]++;
+		sim_iaccess[handle_pkt.cpu][handle_pkt.type]++;
+	} else {
+		sim_dmiss[handle_pkt.cpu][handle_pkt.type]++;
+		sim_daccess[handle_pkt.cpu][handle_pkt.type]++;
+	}
+#endif
+
   return true;
 }
 
 void CACHE::operate()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::operate]" << std::endl; );
   operate_writes();
   operate_reads();
 
@@ -398,6 +557,7 @@ void CACHE::operate()
 
 void CACHE::operate_writes()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::operate_writes]" << std::endl; );
   // perform all writes
   writes_available_this_cycle = MAX_WRITE;
   handle_fill();
@@ -408,6 +568,7 @@ void CACHE::operate_writes()
 
 void CACHE::operate_reads()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::operate_reads]" << std::endl; );
   // perform all reads
   reads_available_this_cycle = MAX_READ;
   handle_read();
@@ -441,7 +602,10 @@ int CACHE::invalidate_entry(uint64_t inval_addr)
 
 int CACHE::add_rq(PACKET* packet)
 {
-	std::cout << "packet->id:" << packet->instr_id << std::endl;
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::add_rq]" << std::endl; );
+	//std::cout << "packet->id:" << packet->instr_id << std::endl;
+	//std::cout << "packet->instr_id:" << packet->instr_id << std::endl;
+	//std::cout << "packet->address:" << std::hex << packet->address << std::dec << std::endl;
   assert(packet->address != 0);
   RQ_ACCESS++;
 
@@ -505,6 +669,7 @@ int CACHE::add_rq(PACKET* packet)
 
 int CACHE::add_wq(PACKET* packet)
 {
+  DP(if (warmup_complete[packet->cpu]) std::cout << "[" << NAME << "::add_wq]" << std::endl; );
   WQ_ACCESS++;
 
   DP(if (warmup_complete[packet->cpu]) {
@@ -548,6 +713,7 @@ int CACHE::add_wq(PACKET* packet)
 
 int CACHE::prefetch_line(uint64_t pf_addr, bool fill_this_level, uint32_t prefetch_metadata)
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::prefetch_line]" << std::endl; );
   pf_requested++;
 
   PACKET pf_packet;
@@ -559,6 +725,10 @@ int CACHE::prefetch_line(uint64_t pf_addr, bool fill_this_level, uint32_t prefet
   pf_packet.address = pf_addr;
   pf_packet.v_address = virtual_prefetch ? pf_addr : 0;
 	//TODO: no page size info pass here, is that ???
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	pf_packet.is_instr = prefetch_metadata;
+#endif
 
   if (virtual_prefetch) {
     if (!VAPQ.full()) {
@@ -595,10 +765,12 @@ int CACHE::prefetch_line(uint64_t ip, uint64_t base_addr, uint64_t pf_addr, bool
 
 void CACHE::va_translate_prefetches()
 {
+  DP(if (warmup_complete[0]) std::cout << "[" << NAME << "::va_translate_prefetches]" << std::endl; );
   // TEMPORARY SOLUTION: mark prefetches as translated after a fixed latency
   if (VAPQ.has_ready()) {
 #ifdef MULTIPLE_PAGE_SIZE
-		assert(VAPQ.front().page_size != 0);
+		//assert(VAPQ.front().page_size != 0);
+		//TODO: maybe better use VPN here
     VAPQ.front().address = vmem.va_to_pa(cpu, VAPQ.front().v_address, lg2(VAPQ.front().page_size)).first;
 #else
     VAPQ.front().address = vmem.va_to_pa(cpu, VAPQ.front().v_address, LOG2_PAGE_SIZE).first;
@@ -618,6 +790,7 @@ void CACHE::va_translate_prefetches()
 
 int CACHE::add_pq(PACKET* packet)
 {
+  DP(if (warmup_complete[packet->cpu]) std::cout << "[" << NAME << "::add_packet]" << std::endl; );
   assert(packet->address != 0);
   PQ_ACCESS++;
 
@@ -677,6 +850,7 @@ int CACHE::add_pq(PACKET* packet)
 
 void CACHE::return_data(PACKET* packet)
 {
+  DP(if (warmup_complete[packet->cpu]) std::cout << "[" << NAME << "::return_data]" << std::endl; );
   // check MSHR information
   auto mshr_entry = std::find_if(MSHR.begin(), MSHR.end(), eq_addr<PACKET>(packet->address, OFFSET_BITS));
   auto first_unreturned = std::find_if(MSHR.begin(), MSHR.end(), [](auto x) { return x.event_cycle == std::numeric_limits<uint64_t>::max(); });
@@ -757,3 +931,141 @@ void CACHE::print_deadlock()
     std::cout << NAME << " MSHR empty" << std::endl;
   }
 }
+
+
+#ifdef ENABLE_EXTRA_CACHE_STATS
+void CACHE::init_cache_stats_monitor()
+{
+/*
+		// init histogram buckets
+		uint32_t n_buckets = 16;
+		uint32_t bucket_size = 400 / n_buckets;
+		uint32_t next_bucket_size = 0;
+    instr_miss_latencies.insert({0, 0});
+    data_miss_latencies.insert({0, 0});
+    for (uint32_t i=0; i <= n_buckets; i++) {
+				next_bucket_size = next_bucket_size + bucket_size;
+        instr_miss_latencies.insert({bucket_size, 0});
+        data_miss_latencies.insert({bucket_size, 0});
+    }
+*/
+}
+
+void CACHE::add_miss_latency(bool is_instr, uint8_t miss_latency)
+{
+		return;
+	//std::cout << (is_instr?"Instr packet ":"Data packet ") << "miss_latency:" << (uint32_t)miss_latency << std::endl;
+/*
+		// lookup the correct bucket
+    bool found = false;
+    std::map<uint64_t, uint64_t>::reverse_iterator it, it_start, it_end;
+    if (is_instr) {
+        it_start = instr_miss_latencies.rbegin();
+        it_end = instr_miss_latencies.rend();
+    } else {
+        it_start = data_miss_latencies.rbegin();
+        it_end = data_miss_latencies.rend();
+    }
+    for (it=it_start; it != it_end; ++it) {
+        if(it->first <= miss_latency) {
+						it->second++;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        if (is_instr)
+						instr_miss_latencies.insert({miss_latency, 1});
+        else
+						data_miss_latencies.insert({miss_latency, 1});
+    }
+*/
+		if (is_instr) {
+			auto it = instr_miss_latencies.find(miss_latency);
+			auto it_end = instr_miss_latencies.end();
+			if(it != it_end) 
+				it->second++;
+			else
+				instr_miss_latencies.insert({miss_latency, 1});
+		} else {
+			auto it = data_miss_latencies.find(miss_latency);
+			auto it_end = data_miss_latencies.end();
+			if(it != it_end)
+				it->second++;
+			else
+				data_miss_latencies.insert({miss_latency, 1});
+		}
+}
+
+//TODO: need a reset stats
+
+void CACHE::save_miss_latencies()
+{
+		return;
+		std::string filename(getenv("MISS_LATENCY_HIST_FILE"));
+		filename.append("_");
+		filename.append(NAME);
+		filename.append(".csv");
+    std::cout << "Saving pakcet latency data to " << filename << std::endl;
+    std::ofstream miss_latencies_csv(filename);
+    if (miss_latencies_csv.is_open()) {
+			miss_latencies_csv << "miss_latency,instr_miss_frequency,data_miss_frequency" << std::endl;
+
+			uint64_t total_imisses = 0, total_dmisses = 0;
+			for (uint32_t i = 0; i < NUM_TYPES; i++) {
+				total_imisses += roi_imiss[0][i];
+				total_dmisses += roi_dmiss[0][i];
+			}
+
+			auto instr_it = instr_miss_latencies.begin();
+			auto data_it = data_miss_latencies.begin();
+			//uint64_t instr_miss_latency = 0, data_miss_latency = 0;
+			double instr_miss_frequency =0, data_miss_frequency = 0;
+			for (int i = 0; i < 400; i++) {
+
+				instr_it = instr_miss_latencies.find(i);
+				if (instr_it != instr_miss_latencies.end()) {
+					instr_miss_frequency = (100.0 * instr_it->second) / (1.0 * total_imisses);
+				} else {
+					instr_miss_frequency = 0;
+				}
+
+				data_it = data_miss_latencies.find(i);
+				if (data_it != data_miss_latencies.end()) {
+					data_miss_frequency = (100.0 * data_it->second) / (1.0 * total_dmisses);
+				} else {
+					data_miss_frequency = 0;
+				}
+        
+				miss_latencies_csv	<< i
+														<< "," << instr_miss_frequency
+														<< "," << data_miss_frequency
+														<< std::endl;
+			}
+			miss_latencies_csv.close();
+
+		} else {
+      std::cout << "Unable to open file" << std::endl;
+		}
+/*        
+				std::map<uint64_t, uint64_t>::iterator instr_it, data_it;
+        for (instr_it=instr_miss_latencies.begin(), data_it=data_miss_latencies.begin();
+                instr_it != instr_miss_latencies.end(); ++instr_it,++data_it) {
+
+						assert(instr_it->first == data_it->first);
+            double instr_frequency = (100.0 * instr_it->second); // / total_imiss_;
+            double data_frequency = (100.0 * data_it->second); // / total_data_packet_accesses;
+            miss_latencies_csv	<< instr_it->first
+																<< "," << instr_frequency << "," << instr_it->second
+																<< "," << data_frequency << "," << data_it->second
+																<< std::endl;
+        }
+        miss_latencies_csv.close();
+    } else
+        std::cout << "Unable to open file" << std::endl;
+*/
+}
+
+#endif
+

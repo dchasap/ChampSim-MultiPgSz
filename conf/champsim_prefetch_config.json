@@ -1,10 +1,7 @@
 {
-    "executable_name": "bin/champsim",
+    "executable_name": "bin/champsim_prefetch",
     "block_size": 64,
-		"multiple_page_size" : true,
     "page_size": 4096,
-    "base_page_size": 4096,
-		"large_page_size": 2097152,
     "heartbeat_frequency": 10000000,
     "num_cores": 1,
 
@@ -54,7 +51,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": true,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no_instr"
+        "prefetcher": "next_line_instr"
     },
 
     "L1D": {
@@ -70,7 +67,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": false,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no"
+        "prefetcher": "next_line"
     },
 
     "L2C": {
@@ -86,7 +83,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": false,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no"
+        "prefetcher": "next_line"
     },
 
     "ITLB": {
@@ -116,8 +113,8 @@
     },
 
     "STLB": {
-        "sets": 128,
-        "ways": 12,
+        "sets": 256,
+        "ways": 6,
         "rq_size": 32,
         "wq_size": 32,
         "pq_size": 0,
@@ -130,9 +127,9 @@
 
 	"PTW": {
 		"pscl5_set": 1,
-		"pscl5_way": 2,
+		"pscl5_way": 1,
 		"pscl4_set": 1,
-		"pscl4_way": 4,
+		"pscl4_way": 2,
 		"pscl3_set": 2,
 		"pscl3_way": 4,
 		"pscl2_set": 4,

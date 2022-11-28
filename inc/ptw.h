@@ -17,6 +17,9 @@ class PagingStructureCache
     uint64_t address;
     uint64_t data;
 		uint32_t lru = std::numeric_limits<uint32_t>::max() >> 1;
+#ifdef MULTIPLE_PAGE_SIZE
+		uint32_t page_size;
+#endif
   };
 
 	const std::string NAME;

@@ -182,6 +182,16 @@ struct ooo_model_instr {
     std::copy(std::begin(pgsz_info.source_base_vpn), std::end(pgsz_info.source_base_vpn), std::begin(this->source_base_vpn));
     std::copy(std::begin(pgsz_info.source_page_size), std::end(pgsz_info.source_page_size), std::begin(this->source_page_size));
     std::copy(std::begin(instr.source_memory), std::end(instr.source_memory), std::begin(this->source_virtual_address));
+
+		/*
+		for(unsigned int i = 0; i < NUM_INSTR_SOURCES; i++) {
+			pgsz_info.source_page_size[i] = (this->source_page_size == 0)?BASE_PAGE_SIZE:LARGE_PAGE_SIZE;
+		}
+		
+		for(unsigned int i = 0; i < NUM_INSTR_DESTINATIONS; i++) {
+			pgsz_info.destination_page_size[i] = (this->destination_page_size == 0)?BASE_PAGE_SIZE:LARGE_PAGE_SIZE;
+		}	
+		*/
 #endif
 
     this->ip = instr.ip;

@@ -16,11 +16,11 @@ VirtualMemory::VirtualMemory(uint64_t capacity, uint64_t small_pg_size,  uint64_
     : minor_fault_penalty(minor_fault_penalty), pt_levels(page_table_levels), 
 			small_page_size(small_pg_size), large_page_size(large_pg_size)
 {
-	uint64_t small_page_capacity = capacity / 2;
+	uint64_t small_page_capacity = capacity;
   assert(small_page_capacity % small_page_size == 0);
   assert(small_pg_size == (1ul << lg2(small_pg_size)) && small_pg_size > 1024);
 
-	uint64_t large_page_capacity = capacity - small_page_capacity;
+	uint64_t large_page_capacity = capacity; // Maybe need to remove also 4KB from the beginning?
   assert(large_page_capacity % large_page_size == 0);
   assert(large_pg_size == (1ul << lg2(large_pg_size)) && large_pg_size > 1024);
 
@@ -51,15 +51,34 @@ uint64_t VirtualMemory::get_offset(uint64_t vaddr, uint32_t level) const { retur
 
 std::pair<uint64_t, bool> VirtualMemory::va_to_pa(uint32_t cpu_num, uint64_t vaddr, uint32_t page_size)
 {
-	uint64_t free_page = ((page_size == small_page_size)?small_ppage_free_list.front():large_ppage_free_list.front());
+	DP( std::cout << "[va_to_pa]" << std::endl; );
+	assert(large_ppage_free_list.size() > 0);
+	//uint64_t free_page = ((page_size == log2(small_page_size))?small_ppage_free_list.front():large_ppage_free_list.front());
+	uint64_t free_page = small_ppage_free_list.front();
   auto [ppage, fault] = vpage_to_ppage_map.insert({{cpu_num, vaddr >> lg2(page_size)}, free_page});
-
+	// TODO:here I could use the VPN instead
   // this vpage doesn't yet have a ppage mapping
   if (fault) {
-		if (page_size == small_page_size)
+/*
+		if (page_size == log2(small_page_size)) 
 			small_ppage_free_list.pop_front();
 		else
 			large_ppage_free_list.pop_front();
+*/
+		small_ppage_free_list.pop_front();
+		DP(if (1){ 
+			std::cout << "Page_Fault!" << std::endl;
+			std::cout << "Allocating v_addr " << std::hex << splice_bits(ppage->second, vaddr, log2(page_size)) << " for full_addr: " << std::hex << vaddr << std::endl;
+			assert(page_size != 0);
+			if (page_size == log2(small_page_size)) {
+				std::cout << "- small page pool -" << std::endl;
+			} else {	
+				std::cout << "- large page pool -" << std::endl;
+			}
+		});
+	}
+	else {
+			DP( std::cout << "Translating v_addr " << std::hex << splice_bits(ppage->second, vaddr, log2(page_size)) << " to full_addr: " << std::hex << vaddr << std::endl;);
 	}
 
   return {splice_bits(ppage->second, vaddr, lg2(page_size)), fault};
@@ -113,8 +132,19 @@ std::pair<uint64_t, bool> VirtualMemory::va_to_pa(uint32_t cpu_num, uint64_t vad
   auto [ppage, fault] = vpage_to_ppage_map.insert({{cpu_num, vaddr >> log2_page_size}, ppage_free_list.front()});
 
   // this vpage doesn't yet have a ppage mapping
-  if (fault)
+  if (fault) {
     ppage_free_list.pop_front();
+
+		DP(if (warmup_complete[0] || 1) { 
+			std::cout << "Page_Fault!" << std::endl;
+			std::cout << "Allocating v_addr " << std::hex << splice_bits(ppage->second, vaddr, log2_page_size) << " for full_addr: " << std::hex << vaddr << std::endl;
+		});
+	}
+	else {
+			DP(if (warmup_complete[0] || 1) { 
+			std::cout << "Transated v_addr " << std::hex << splice_bits(ppage->second, vaddr, log2_page_size) << " to full_addr: " << std::hex << vaddr << std::endl;
+		});
+	}
 
   return {splice_bits(ppage->second, vaddr, log2_page_size), fault};
 }

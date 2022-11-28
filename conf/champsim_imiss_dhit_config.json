@@ -1,7 +1,7 @@
 {
-    "executable_name": "bin/champsim",
+    "executable_name": "bin/champsim_imiss_dhit",
     "block_size": 64,
-    "page_size": 2097152,
+    "page_size": 4096,
     "heartbeat_frequency": 10000000,
     "num_cores": 1,
 
@@ -27,7 +27,7 @@
             "dispatch_latency": 1,
             "schedule_latency": 0,
             "execute_latency": 0,
-            "branch_predictor": "bimodal",
+            "branch_predictor": "hashed_perceptron",
             "btb": "basic_btb"
         }
     ],
@@ -51,7 +51,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": true,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no_instr"
+        "prefetcher": "fnl_mma"
     },
 
     "L1D": {
@@ -67,7 +67,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": false,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no"
+        "prefetcher": "ipcp"
     },
 
     "L2C": {
@@ -83,7 +83,7 @@
         "prefetch_as_load": false,
         "virtual_prefetch": false,
         "prefetch_activate": "LOAD,PREFETCH",
-        "prefetcher": "no"
+        "prefetcher": "spp_dev"
     },
 
     "ITLB": {
@@ -100,8 +100,8 @@
     },
 
     "DTLB": {
-        "sets": 16,
-        "ways": 4,
+        "sets": 1024,
+        "ways": 128,
         "rq_size": 16,
         "wq_size": 16,
         "pq_size": 0,
@@ -127,9 +127,9 @@
 
 	"PTW": {
 		"pscl5_set": 1,
-		"pscl5_way": 2,
+		"pscl5_way": 1,
 		"pscl4_set": 1,
-		"pscl4_way": 4,
+		"pscl4_way": 2,
 		"pscl3_set": 2,
 		"pscl3_way": 4,
 		"pscl2_set": 4,

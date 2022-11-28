@@ -28,6 +28,10 @@ public:
 	uint32_t page_size = 0;
 	uint64_t base_vpn = 0;
 #endif
+	
+#ifdef ENABLE_EXTRA_CACHE_STATS
+	bool is_instr = false;
+#endif
 
   std::vector<std::vector<LSQ_ENTRY>::iterator> lq_index_depend_on_me = {}, sq_index_depend_on_me = {};
   std::vector<champsim::circular_buffer<ooo_model_instr>::iterator> instr_depend_on_me;
@@ -59,6 +63,10 @@ struct LSQ_ENTRY {
 #ifdef MULTIPLE_PAGE_SIZE
 	uint32_t page_size = 0;
 	uint64_t base_vpn = 0;
+#endif
+
+#ifdef ENABLE_EXTRA_CACHE_STATS 
+	bool is_instr = false;
 #endif
 
   champsim::circular_buffer<ooo_model_instr>::iterator rob_index;

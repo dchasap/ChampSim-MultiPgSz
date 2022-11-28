@@ -8,9 +8,10 @@ source ./scripts/benchmarks_all.sh
 
 if [ 1 -eq 1 ]; then
 echo "Parsing page size distribution stats..."
+CONTIGUITY=256
 for simpoint in $SIMPOINTS; do
 	echo ${simpoint}
-	./scripts/parse_page_size_dist.sh ./dump/convert_trace_${simpoint}.out > ./stats/${simpoint}_page_size_dist.csv
+	./scripts/parse_page_size_dist.sh ./dump/convert_trace_${simpoint}.out > ./stats/${simpoint}_page_size_dist_${CONTIGUITY}.csv
 done
 
 echo "Applying simpoint weights..."
